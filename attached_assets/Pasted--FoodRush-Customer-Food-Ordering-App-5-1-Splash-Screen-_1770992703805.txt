@@ -1,0 +1,266 @@
+🍔 FoodRush – Customer Food Ordering App
+
+
+
+
+
+
+5
+📱 1️⃣ Splash Screen
+Purpose: App initialization
+Data / Logic
+FoodRush logo
+App version check
+Auto login if token valid
+Fetch user location permission
+Load restaurant cache
+👋 2️⃣ Onboarding Screens
+Slides
+Order food easily 🍕
+Fast delivery 🚴‍♂️
+Live tracking 📍
+Exclusive offers 🎉
+Data Stored
+hasSeenOnboarding = true
+🔐 3️⃣ Login / Registration
+Phone Number Screen
+Fields:
+Phone number
+Country code
+Continue
+OTP Screen
+OTP input
+Resend
+Verify
+Stored Data
+token
+user_id
+name
+email
+default_address
+Optional:
+Google Login
+Apple Login
+🏠 4️⃣ Home Screen (Main Dashboard)
+
+
+
+
+
+
+4
+Sections:
+📍 Location Bar
+Current address
+Change location
+GPS detect
+🔍 Search Bar
+Search:
+Restaurant
+Food item
+Cuisine
+🍽 Categories
+Pizza
+Burger
+Biryani
+Chinese
+Desserts
+Healthy
+🔥 Popular Restaurants
+Card shows:
+Restaurant name
+Rating ⭐
+Delivery time
+Distance
+Cost for two
+Offer badge
+🎁 Offers Banner
+Coupon codes
+Discounts
+🏪 5️⃣ Restaurant Details Page
+
+
+
+
+
+
+4
+Top Section
+Restaurant name
+Rating
+Delivery time
+Distance
+Cuisine types
+Veg/Non-veg tag
+Menu Section
+Each Item shows:
+Food name
+Image
+Price
+Description
+Rating
+Add to Cart button
+Customize option
+Bottom Section
+Reviews
+Photos
+Info (open time, address)
+🛒 6️⃣ Cart Page
+Shows:
+Food items list
+Quantity change
+Remove item
+Special instructions
+Coupon apply
+Delivery charges
+Taxes
+Total amount
+Buttons:
+👉 Proceed to Checkout
+📍 7️⃣ Address Selection Page
+Fields:
+Home / Work / Other
+Address line
+Landmark
+Pin code
+Contact name
+Phone number
+Save address
+💳 8️⃣ Payment Page
+Options:
+UPI
+Credit/Debit card
+Cash on Delivery
+Wallet
+Net Banking
+Shows:
+Order summary
+Discount applied
+Final payable amount
+⏳ 9️⃣ Order Confirmation Screen
+Shows:
+Order ID
+Restaurant name
+Estimated delivery time
+Track Order button
+🗺 🔟 Live Order Tracking Screen
+
+
+
+
+
+
+4
+Sections:
+Map with rider location
+Order status timeline:
+Order placed
+Preparing
+Picked up
+On the way
+Delivered
+Delivery Partner Info:
+Name
+Phone call button
+Rating
+📜 1️⃣1️⃣ Order History Screen
+List shows:
+Order ID
+Restaurant
+Date
+Amount
+Delivered/Cancelled
+Click → reorder option
+⭐ 1️⃣2️⃣ Ratings & Reviews Screen
+Rate food ⭐⭐⭐⭐⭐
+Write review
+Upload photo
+Tip delivery partner
+👤 1️⃣3️⃣ Profile Screen
+Fields:
+Name
+Phone
+Email
+Saved addresses
+Payment methods
+Logout
+Delete account
+🔔 1️⃣4️⃣ Notifications Screen
+Types:
+Order updates
+Offers
+Refunds
+Promotions
+🎟 1️⃣5️⃣ Offers & Coupons Screen
+Available coupons
+Auto apply
+Terms & conditions
+🆘 1️⃣6️⃣ Help & Support Screen
+Options:
+Chat support
+Call support
+Report issue
+Refund request
+Issue Fields:
+Order ID
+Problem type
+Description
+Upload image
+🧾 Backend Data Model
+User Table
+user_id
+name
+phone
+email
+wallet_balance
+rating
+Restaurant Table
+id
+name
+rating
+location
+cuisine
+menu_items
+Order Table
+order_id
+user_id
+partner_id
+restaurant_id
+items
+amount
+status
+payment_type
+🔄 Order Flow
+User selects restaurant
+Adds food to cart
+Chooses address
+Pays
+Restaurant prepares food
+Delivery partner picks up
+User tracks order
+Order delivered
+User rates
+🏗 Suggested React Native Folder Structure
+src/
+ ├── screens/
+ │    ├── Home
+ │    ├── Restaurant
+ │    ├── Cart
+ │    ├── Tracking
+ │    ├── Profile
+ │
+ ├── components/
+ ├── navigation/
+ ├── services/api/
+ ├── redux/
+ ├── hooks/
+ ├── assets/
+🔥 Extra Advanced Features (Optional)
+AI food recommendation
+Scheduled orders
+Group ordering
+Subscription meal plans
+Voice ordering
+Dark mode
+Loyalty points
+Referral program
