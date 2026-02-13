@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "My App",
-    "slug": "my-app",
+    "name": "FoodRush",
+    "slug": "foodrush",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "myapp",
+    "scheme": "foodrush",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
