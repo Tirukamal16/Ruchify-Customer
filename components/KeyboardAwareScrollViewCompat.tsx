@@ -12,7 +12,10 @@ export function KeyboardAwareScrollViewCompat({
   keyboardShouldPersistTaps = "handled",
   ...props
 }: Props) {
-  if (Platform.OS === "web") {
+  // On Android, adjustResize (set in app.json) shrinks the layout when the
+  // keyboard opens, so a plain ScrollView is sufficient and more stable.
+  // KeyboardAwareScrollView is only needed on iOS to scroll inputs above the keyboard.
+  if (Platform.OS !== "ios") {
     return (
       <ScrollView keyboardShouldPersistTaps={keyboardShouldPersistTaps} {...props}>
         {children}

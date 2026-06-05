@@ -5,9 +5,14 @@ export interface MenuItem {
   price: number;
   image: string;
   rating: number;
+  /** From API: 1-decimal avg rating string, or null for brand-new items (show "New"). */
+  avgRating?: string | null;
+  totalRatings?: number;
   isVeg: boolean;
   category: string;
   popular?: boolean;
+  portionSize?: string; // e.g. "Serves 1-2" or "250g"
+  sizes?: { name: string; priceAddon: number }[];
 }
 
 export interface Restaurant {
@@ -17,6 +22,7 @@ export interface Restaurant {
   rating: number;
   deliveryTime: string;
   distance: string;
+  distanceKm?: number; // numeric km, used for sorting
   costForTwo: number;
   image: string;
   offer?: string;
@@ -25,17 +31,23 @@ export interface Restaurant {
   openTime: string;
   closeTime: string;
   menu: MenuItem[];
+  latitude?: number;
+  longitude?: number;
 }
 
 export const categories = [
-  { id: 'pizza', name: 'Pizza', icon: 'pizza-outline' as const },
-  { id: 'burger', name: 'Burger', icon: 'fast-food-outline' as const },
-  { id: 'biryani', name: 'Biryani', icon: 'flame-outline' as const },
-  { id: 'chinese', name: 'Chinese', icon: 'restaurant-outline' as const },
-  { id: 'desserts', name: 'Desserts', icon: 'ice-cream-outline' as const },
-  { id: 'healthy', name: 'Healthy', icon: 'leaf-outline' as const },
-  { id: 'coffee', name: 'Coffee', icon: 'cafe-outline' as const },
-  { id: 'sandwich', name: 'Sandwich', icon: 'nutrition-outline' as const },
+  { id: 'biryani', name: 'Biryani', icon: 'flame-outline' as const, image: 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=200&h=200&fit=crop' },
+  { id: 'chaat', name: 'Chaat', icon: 'leaf-outline' as const, image: 'https://images.unsplash.com/photo-1567337710282-00832b415979?w=200&h=200&fit=crop' },
+  { id: 'south indian', name: 'South Indian', icon: 'restaurant-outline' as const, image: 'https://images.unsplash.com/photo-1589301760014-d929f3979dbc?w=200&h=200&fit=crop' },
+  { id: 'burger', name: 'Burger', icon: 'fast-food-outline' as const, image: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=200&h=200&fit=crop' },
+  { id: 'pizza', name: 'Pizza', icon: 'pizza-outline' as const, image: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=200&h=200&fit=crop' },
+  { id: 'chinese', name: 'Chinese', icon: 'restaurant-outline' as const, image: 'https://images.unsplash.com/photo-1585032226651-759b368d7246?w=200&h=200&fit=crop' },
+  { id: 'desserts', name: 'Desserts', icon: 'ice-cream-outline' as const, image: 'https://images.unsplash.com/photo-1551024601-bec78aea704b?w=200&h=200&fit=crop' },
+  { id: 'healthy', name: 'Healthy', icon: 'leaf-outline' as const, image: 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=200&h=200&fit=crop' },
+  { id: 'coffee', name: 'Coffee', icon: 'cafe-outline' as const, image: 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=200&h=200&fit=crop' },
+  { id: 'sandwich', name: 'Sandwich', icon: 'nutrition-outline' as const, image: 'https://images.unsplash.com/photo-1528735602780-2552fd46c7af?w=200&h=200&fit=crop' },
+  { id: 'tiffin', name: 'Tiffin', icon: 'restaurant-outline' as const, image: 'https://images.unsplash.com/photo-1567337710282-00832b415979?w=200&h=200&fit=crop' },
+  { id: 'meals', name: 'Meals', icon: 'flame-outline' as const, image: 'https://images.unsplash.com/photo-1546549032-9571cd6b27df?w=200&h=200&fit=crop' },
 ];
 
 export const restaurants: Restaurant[] = [

@@ -13,7 +13,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/context/AuthContext';
-import { authApi, addressesApi, configApi, clearTokens, type ApiCustomerAddress } from '@/lib/api';
+import { authApi, addressesApi, configApi, type ApiCustomerAddress } from '@/lib/api';
+import { useSupportContact } from '@/hooks/useSupportContact';
 import { Toast, useToast } from '@/components/Toast';
 import MapLocationPicker, { type PickedLocation } from '@/components/MapLocationPicker';
 
@@ -85,6 +86,19 @@ function ModalSheet({ visible, onClose, title, children }: {
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
+export function ErrorBoundary({ retry }: { error: Error; retry: () => void }) {
+  return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, backgroundColor: '#FAFAFA' }}>
+      <Ionicons name="alert-circle-outline" size={52} color="#DDD" />
+      <Text style={{ fontFamily: 'Poppins_600SemiBold', fontSize: 17, color: '#333', marginTop: 16, textAlign: 'center' }}>Couldn't load profile</Text>
+      <Text style={{ fontFamily: 'Poppins_400Regular', fontSize: 13, color: '#999', marginTop: 6, textAlign: 'center' }}>Tap Retry to reload</Text>
+      <Pressable onPress={retry} style={{ marginTop: 24, backgroundColor: '#FF6B35', paddingHorizontal: 32, paddingVertical: 13, borderRadius: 12 }}>
+        <Text style={{ fontFamily: 'Poppins_600SemiBold', fontSize: 15, color: '#fff' }}>Retry</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const webTopInset = Platform.OS === 'web' ? 67 : 0;
@@ -93,15 +107,17 @@ export default function ProfileScreen() {
   const [loggingOut, setLoggingOut] = useState(false);
   const { show: showToast, toastProps } = useToast();
 
-  // Fetch support contact details from backend config
+  // App version from config
   const { data: configItems } = useQuery({
     queryKey: ['config'],
     queryFn: () => configApi.list(),
     staleTime: 10 * 60 * 1000,
   });
-  const supportEmail = configItems?.find((c) => c.key === 'support_email')?.value ?? 'support@ruchify.in';
-  const supportPhone = configItems?.find((c) => c.key === 'support_phone')?.value ?? '9381828481';
-  const appVersion = configItems?.find((c) => c.key === 'app_version')?.value ?? '1.0.8';
+  const appVersion = configItems?.find((c) => c.key === 'app_version')?.value ?? '1.0.9';
+
+  // Support contact — live from /api/public/support-contact (5-min cache).
+  // Any field that is an empty string means ops hasn't configured it — hide that CTA.
+  const supportContact = useSupportContact();
 
   // Refresh user profile on mount to ensure latest name/data
   useEffect(() => {
@@ -139,7 +155,7 @@ export default function ProfileScreen() {
       const updated = await authApi.updateProfile({ name, email: email || undefined });
       updateUser(updated);
       setShowEditProfile(false);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       showToast('Profile updated!');
     } catch (err: any) {
       Alert.alert('Error', err?.message?.replace(/^\d+:\s*/, '') || 'Could not update profile.');
@@ -159,15 +175,15 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     AsyncStorage.getItem(NOTIF_PREFS_KEY).then((v) => {
-      if (v) setNotifPrefs(JSON.parse(v));
-    });
+      if (v) { try { setNotifPrefs(JSON.parse(v)); } catch {} }
+    }).catch(() => {});
   }, []);
 
   const toggleNotif = async (key: keyof typeof notifPrefs) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     const updated = { ...notifPrefs, [key]: !notifPrefs[key] };
     setNotifPrefs(updated);
-    await AsyncStorage.setItem(NOTIF_PREFS_KEY, JSON.stringify(updated));
+    AsyncStorage.setItem(NOTIF_PREFS_KEY, JSON.stringify(updated)).catch(() => {});
   };
 
   // ── Saved Addresses ──────────────────────────────────────────────────────
@@ -188,7 +204,7 @@ export default function ProfileScreen() {
     if (!user) return;
     setLoadingAddresses(true);
     try {
-      const list = await addressesApi.list(user.id);
+      const list = await addressesApi.list();
       setAddresses(list);
     } catch {}
     finally { setLoadingAddresses(false); }
@@ -205,8 +221,8 @@ export default function ProfileScreen() {
           try {
             await addressesApi.delete(id);
             setAddresses((prev) => prev.filter((a) => a.id !== id));
-            queryClient.invalidateQueries({ queryKey: ['addresses', user?.id] });
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            queryClient.invalidateQueries({ queryKey: ['addresses'] });
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
             showToast('Address removed');
           } catch (err: any) {
             Alert.alert('Error', err?.message?.replace(/^\d+:\s*/, '') || 'Could not delete address.');
@@ -238,9 +254,9 @@ export default function ProfileScreen() {
       updates.push(addressesApi.update(id, { isDefault: willBeDefault }));
       await Promise.all(updates);
 
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
       showToast(willBeDefault ? 'Default address set' : 'Default removed');
-      queryClient.invalidateQueries({ queryKey: ['addresses', user?.id] });
+      queryClient.invalidateQueries({ queryKey: ['addresses'] });
       fetchAddresses(); // reconcile with backend truth
     } catch (err: any) {
       fetchAddresses(); // revert optimistic update on failure
@@ -262,7 +278,7 @@ export default function ProfileScreen() {
     if (!user) return;
     setSavingAddr(true);
     try {
-      await addressesApi.create(user.id, {
+      await addressesApi.create({
         label: addrLabel,
         address: addrLine.trim(),
         landmark: addrLandmark.trim() || undefined,
@@ -272,7 +288,7 @@ export default function ProfileScreen() {
         longitude: addrLng || undefined,
         isDefault: addresses.length === 0,
       });
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       showToast('Address saved!');
       setAddrLine(''); setAddrLandmark(''); setAddrCity('Chittoor'); setAddrPincode('');
       setAddrLat(''); setAddrLng('');
@@ -283,49 +299,6 @@ export default function ProfileScreen() {
     } finally { setSavingAddr(false); }
   };
 
-  // ── Delete Account ───────────────────────────────────────────────────────
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [deleteOtp, setDeleteOtp] = useState('');
-  const [deleteStep, setDeleteStep] = useState<'confirm' | 'otp'>('confirm');
-  const [sendingOtp, setSendingOtp] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-
-  const handleRequestDeleteOtp = async () => {
-    setSendingOtp(true);
-    try {
-      await authApi.sendDeleteAccountOtp();
-      setDeleteStep('otp');
-    } catch (err: any) {
-      Alert.alert('Error', err?.message?.replace(/^\d+:\s*/, '') || 'Could not send OTP. Please try again.');
-    } finally {
-      setSendingOtp(false);
-    }
-  };
-
-  const handleConfirmDelete = async () => {
-    if (deleteOtp.length !== 6) {
-      Alert.alert('Invalid OTP', 'Please enter the 6-digit OTP sent to your phone.');
-      return;
-    }
-    setDeleting(true);
-    try {
-      await authApi.deleteAccount(deleteOtp);
-      await clearTokens();
-      setShowDeleteModal(false);
-      showToast('Account deleted successfully.');
-      setTimeout(() => logout(), 500);
-    } catch (err: any) {
-      Alert.alert('Error', err?.message?.replace(/^\d+:\s*/, '') || 'Could not delete account. Please check the OTP and try again.');
-    } finally {
-      setDeleting(false);
-    }
-  };
-
-  const openDeleteModal = () => {
-    setDeleteStep('confirm');
-    setDeleteOtp('');
-    setShowDeleteModal(true);
-  };
 
   // ── Logout ───────────────────────────────────────────────────────────────
   const handleLogout = () => {
@@ -334,7 +307,7 @@ export default function ProfileScreen() {
       {
         text: 'Log Out', style: 'destructive',
         onPress: async () => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
           setLoggingOut(true);
           await logout();
           setLoggingOut(false);
@@ -457,7 +430,7 @@ export default function ProfileScreen() {
               icon="trash-outline"
               label="Delete My Account"
               subtitle="Permanently delete account and data"
-              onPress={openDeleteModal}
+              onPress={() => Linking.openURL('https://ruchify.in/account-deletion')}
               danger
             />
           </View>
@@ -511,7 +484,6 @@ export default function ProfileScreen() {
         {[
           { icon: 'cash-outline',      label: 'Cash on Delivery',  sub: 'Pay in cash when your order arrives' },
           { icon: 'phone-portrait-outline', label: 'UPI',          sub: 'Google Pay, PhonePe, Paytm & more' },
-          { icon: 'card-outline',      label: 'Credit / Debit Card', sub: 'Visa, Mastercard, RuPay' },
         ].map(({ icon, label, sub }) => (
           <View key={label} style={styles.paymentRow}>
             <View style={styles.paymentIcon}>
@@ -542,11 +514,20 @@ export default function ProfileScreen() {
                 <Text style={styles.emptyText}>No saved addresses yet.</Text>
               </View>
             )}
-            {addresses.map((addr) => (
-              <View key={addr.id} style={styles.addressCard}>
+            {addresses.map((addr) => {
+              const unserviceable = addr.isServiceable === false;
+              return (
+              <View key={addr.id} style={[styles.addressCard, unserviceable && { opacity: 0.6 }]}>
                 <View style={styles.addressCardLeft}>
-                  <View style={styles.addressLabelBadge}>
-                    <Text style={styles.addressLabelText}>{addr.label}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <View style={styles.addressLabelBadge}>
+                      <Text style={styles.addressLabelText}>{addr.label}</Text>
+                    </View>
+                    {unserviceable && (
+                      <View style={styles.unserviceableBadge}>
+                        <Text style={styles.unserviceableText}>Not serviceable</Text>
+                      </View>
+                    )}
                   </View>
                   <Text style={styles.addressLine}>{addr.address}</Text>
                   {addr.landmark ? <Text style={styles.addressSub}>Near {addr.landmark}</Text> : null}
@@ -567,7 +548,7 @@ export default function ProfileScreen() {
                   </Pressable>
                 </View>
               </View>
-            ))}
+            );})}
 
             {showAddAddr ? (
               <View style={styles.addAddrForm}>
@@ -677,20 +658,45 @@ export default function ProfileScreen() {
 
       {/* ── Help & Support Modal ──────────────────────────────────────────── */}
       <ModalSheet visible={showHelp} onClose={() => setShowHelp(false)} title="Help & Support">
-        <View style={styles.contactRow}>
-          <View style={styles.contactIcon}><Ionicons name="mail-outline" size={20} color={Colors.primary} /></View>
-          <View>
-            <Text style={styles.contactLabel}>Email Support</Text>
-            <Text style={styles.contactValue}>{supportEmail}</Text>
-          </View>
-        </View>
-        <View style={styles.contactRow}>
-          <View style={styles.contactIcon}><Ionicons name="call-outline" size={20} color={Colors.primary} /></View>
-          <View>
-            <Text style={styles.contactLabel}>Customer Care</Text>
-            <Text style={styles.contactValue}>{supportPhone}</Text>
-          </View>
-        </View>
+        {!!supportContact?.phone && (
+          <Pressable
+            style={[styles.contactRow, { paddingVertical: 12 }]}
+            onPress={() => Linking.openURL(`tel:${supportContact.phone}`)}
+          >
+            <View style={styles.contactIcon}><Ionicons name="call-outline" size={20} color={Colors.primary} /></View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.contactLabel}>Customer Care</Text>
+              <Text style={styles.contactValue}>{supportContact.phone}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={Colors.textLight} />
+          </Pressable>
+        )}
+        {!!supportContact?.whatsapp && (
+          <Pressable
+            style={[styles.contactRow, { paddingVertical: 12 }]}
+            onPress={() => Linking.openURL(`https://wa.me/${supportContact.whatsapp}`)}
+          >
+            <View style={styles.contactIcon}><Ionicons name="logo-whatsapp" size={20} color={Colors.primary} /></View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.contactLabel}>WhatsApp</Text>
+              <Text style={styles.contactValue}>{supportContact.whatsapp}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={Colors.textLight} />
+          </Pressable>
+        )}
+        {!!supportContact?.email && (
+          <Pressable
+            style={[styles.contactRow, { paddingVertical: 12 }]}
+            onPress={() => Linking.openURL(`mailto:${supportContact.email}`)}
+          >
+            <View style={styles.contactIcon}><Ionicons name="mail-outline" size={20} color={Colors.primary} /></View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.contactLabel}>Email Support</Text>
+              <Text style={styles.contactValue}>{supportContact.email}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={Colors.textLight} />
+          </Pressable>
+        )}
         <Text style={styles.faqTitle}>Frequently Asked Questions</Text>
         {[
           { q: 'How do I track my order?', a: 'Go to the Orders tab and tap "Track Order" on any active order.' },
@@ -705,75 +711,6 @@ export default function ProfileScreen() {
           </View>
         ))}
       </ModalSheet>
-
-      {/* ── Delete Account Modal ──────────────────────────────────────────── */}
-      <Modal visible={showDeleteModal} transparent animationType="slide" onRequestClose={() => setShowDeleteModal(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalSheet, { paddingBottom: 32 }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: Colors.error }]}>Delete Account</Text>
-              <Pressable onPress={() => setShowDeleteModal(false)} style={styles.modalClose}>
-                <Ionicons name="close" size={22} color={Colors.textSecondary} />
-              </Pressable>
-            </View>
-            {deleteStep === 'confirm' ? (
-              <View style={{ gap: 16, paddingTop: 8 }}>
-                <Text style={styles.modalDesc}>
-                  This is permanent. Your orders will be anonymized for tax records. All addresses, cart items, and notifications will be deleted.
-                </Text>
-                <View style={styles.addAddrRow}>
-                  <Pressable style={[styles.secondaryBtn, { flex: 1 }]} onPress={() => setShowDeleteModal(false)}>
-                    <Text style={styles.secondaryBtnText}>Cancel</Text>
-                  </Pressable>
-                  <Pressable
-                    style={[styles.primaryBtn, { flex: 1, backgroundColor: Colors.error }, sendingOtp && { opacity: 0.7 }]}
-                    onPress={handleRequestDeleteOtp}
-                    disabled={sendingOtp}
-                  >
-                    {sendingOtp
-                      ? <ActivityIndicator color="#fff" />
-                      : <Text style={styles.primaryBtnText}>Send OTP</Text>
-                    }
-                  </Pressable>
-                </View>
-              </View>
-            ) : (
-              <View style={{ gap: 16, paddingTop: 8 }}>
-                <Text style={styles.modalDesc}>
-                  Enter the 6-digit OTP sent to your registered phone number to confirm deletion.
-                </Text>
-                <View style={styles.modalInputWrap}>
-                  <TextInput
-                    style={[styles.modalInput, { textAlign: 'center', letterSpacing: 6, fontSize: 20 }]}
-                    value={deleteOtp}
-                    onChangeText={(t) => setDeleteOtp(t.replace(/\D/g, '').slice(0, 6))}
-                    keyboardType="number-pad"
-                    placeholder="------"
-                    placeholderTextColor={Colors.textLight}
-                    maxLength={6}
-                    autoFocus
-                  />
-                </View>
-                <View style={styles.addAddrRow}>
-                  <Pressable style={[styles.secondaryBtn, { flex: 1 }]} onPress={() => setDeleteStep('confirm')}>
-                    <Text style={styles.secondaryBtnText}>Back</Text>
-                  </Pressable>
-                  <Pressable
-                    style={[styles.primaryBtn, { flex: 1, backgroundColor: Colors.error }, deleting && { opacity: 0.7 }]}
-                    onPress={handleConfirmDelete}
-                    disabled={deleting}
-                  >
-                    {deleting
-                      ? <ActivityIndicator color="#fff" />
-                      : <Text style={styles.primaryBtnText}>Delete Forever</Text>
-                    }
-                  </Pressable>
-                </View>
-              </View>
-            )}
-          </View>
-        </View>
-      </Modal>
 
       <Toast {...toastProps} />
 
@@ -877,6 +814,8 @@ const styles = StyleSheet.create({
   setDefaultText: { fontFamily: 'Poppins_500Medium', fontSize: 12, color: Colors.primary },
   defaultBadge: { backgroundColor: Colors.success + '15', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 20 },
   defaultBadgeText: { fontFamily: 'Poppins_500Medium', fontSize: 11, color: Colors.success },
+  unserviceableBadge: { backgroundColor: Colors.error + '18', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 },
+  unserviceableText: { fontFamily: 'Poppins_500Medium', fontSize: 10, color: Colors.error },
   addAddrBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'center', paddingVertical: 14, borderWidth: 1.5, borderColor: Colors.primary, borderRadius: 12, borderStyle: 'dashed', marginTop: 4 },
   addAddrBtnText: { fontFamily: 'Poppins_600SemiBold', fontSize: 14, color: Colors.primary },
   addAddrForm: { gap: 10, marginTop: 4 },

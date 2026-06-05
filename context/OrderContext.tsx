@@ -1,17 +1,25 @@
 import React, { createContext, useContext, useState, useCallback, useMemo, ReactNode, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Crypto from 'expo-crypto';
 import type { CartItem } from './CartContext';
 
-export type OrderStatus = 'placed' | 'preparing' | 'picked_up' | 'on_the_way' | 'delivered';
+export type OrderStatus =
+  | 'placed'
+  | 'accepted'
+  | 'preparing'
+  | 'ready'
+  | 'picked_up'
+  | 'on_the_way'
+  | 'delivered'
+  | 'cancelled';
 
 export interface Order {
-  id: string;
+  id: string;           // API numeric id as string (or local short UUID for offline)
   restaurantName: string;
   items: CartItem[];
   subtotal: number;
   deliveryFee: number;
-  tax: number;
+  packingCharges?: number;
+  platformFee: number;
   discount: number;
   total: number;
   status: OrderStatus;
@@ -19,22 +27,13 @@ export interface Order {
   estimatedDelivery: string;
   address: string;
   paymentMethod: string;
+  notes?: string;
 }
 
 interface OrderContextValue {
   orders: Order[];
   activeOrder: Order | null;
-  placeOrder: (params: {
-    restaurantName: string;
-    items: CartItem[];
-    subtotal: number;
-    deliveryFee: number;
-    tax: number;
-    discount: number;
-    total: number;
-    address: string;
-    paymentMethod: string;
-  }) => Order;
+  addOrder: (order: Order) => void;
   updateOrderStatus: (orderId: string, status: OrderStatus) => void;
   getOrder: (orderId: string) => Order | undefined;
 }
@@ -55,29 +54,13 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     AsyncStorage.setItem(ORDERS_KEY, JSON.stringify(newOrders));
   }, []);
 
-  const placeOrder = useCallback((params: {
-    restaurantName: string;
-    items: CartItem[];
-    subtotal: number;
-    deliveryFee: number;
-    tax: number;
-    discount: number;
-    total: number;
-    address: string;
-    paymentMethod: string;
-  }) => {
-    const order: Order = {
-      id: Crypto.randomUUID().slice(0, 8).toUpperCase(),
-      ...params,
-      status: 'placed',
-      createdAt: new Date().toISOString(),
-      estimatedDelivery: `${25 + Math.floor(Math.random() * 20)} min`,
-    };
-    const newOrders = [order, ...orders];
-    setOrders(newOrders);
-    saveOrders(newOrders);
-    return order;
-  }, [orders, saveOrders]);
+  const addOrder = useCallback((order: Order) => {
+    setOrders((prev) => {
+      const newOrders = [order, ...prev];
+      saveOrders(newOrders);
+      return newOrders;
+    });
+  }, [saveOrders]);
 
   const updateOrderStatus = useCallback((orderId: string, status: OrderStatus) => {
     setOrders((prev) => {
@@ -92,12 +75,12 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   }, [orders]);
 
   const activeOrder = useMemo(() => {
-    return orders.find((o) => o.status !== 'delivered') || null;
+    return orders.find((o) => o.status !== 'delivered' && o.status !== 'cancelled') || null;
   }, [orders]);
 
   const value = useMemo(() => ({
-    orders, activeOrder, placeOrder, updateOrderStatus, getOrder,
-  }), [orders, activeOrder, placeOrder, updateOrderStatus, getOrder]);
+    orders, activeOrder, addOrder, updateOrderStatus, getOrder,
+  }), [orders, activeOrder, addOrder, updateOrderStatus, getOrder]);
 
   return <OrderContext.Provider value={value}>{children}</OrderContext.Provider>;
 }

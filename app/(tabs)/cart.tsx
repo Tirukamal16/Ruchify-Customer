@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
-  StyleSheet, Text, View, FlatList, Pressable, TextInput, Platform, Alert,
+  StyleSheet, Text, View, Pressable, TextInput, Platform, Alert, ActivityIndicator,
+  ScrollView, BackHandler,
 } from 'react-native';
+import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -9,13 +11,19 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { useCart, type CartItem } from '@/context/CartContext';
+import { useQuote } from '@/hooks/useQuote';
+import { BillBreakdown } from '@/components/BillBreakdown';
+import AppHeader from '@/components/AppHeader';
+import { Toast, useToast } from '@/components/Toast';
 
 function CartItemCard({ item }: { item: CartItem }) {
-  const { updateQuantity, removeItem } = useCart();
+  const { updateQuantity, removeItem, updateInstructions } = useCart();
+  const [showNote, setShowNote] = useState(false);
+  const [noteText, setNoteText] = useState(item.specialInstructions ?? '');
 
   return (
     <View style={styles.cartItem}>
-      <Image source={{ uri: item.menuItem.image }} style={styles.itemImage} contentFit="cover" />
+      <Image source={{ uri: item.menuItem.image }} style={styles.itemImage} contentFit="cover" cachePolicy="memory-disk" />
       <View style={styles.itemDetails}>
         <View style={styles.itemNameRow}>
           <View style={[styles.vegBadge, { backgroundColor: item.menuItem.isVeg ? '#22C55E' : '#EF4444' }]}>
@@ -23,11 +31,11 @@ function CartItemCard({ item }: { item: CartItem }) {
           </View>
           <Text style={styles.itemName} numberOfLines={1}>{item.menuItem.name}</Text>
         </View>
-        <Text style={styles.itemPrice}>${item.menuItem.price.toFixed(2)}</Text>
+        <Text style={styles.itemPrice}>₹{item.menuItem.price.toFixed(0)}</Text>
         <View style={styles.quantityRow}>
           <Pressable
             onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
               updateQuantity(item.menuItem.id, item.quantity - 1);
             }}
             style={styles.qtyBtn}
@@ -37,7 +45,7 @@ function CartItemCard({ item }: { item: CartItem }) {
           <Text style={styles.qtyText}>{item.quantity}</Text>
           <Pressable
             onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
               updateQuantity(item.menuItem.id, item.quantity + 1);
             }}
             style={styles.qtyBtn}
@@ -45,12 +53,42 @@ function CartItemCard({ item }: { item: CartItem }) {
             <Ionicons name="add" size={16} color={Colors.primary} />
           </Pressable>
           <View style={{ flex: 1 }} />
-          <Text style={styles.itemTotal}>${(item.menuItem.price * item.quantity).toFixed(2)}</Text>
+          <Text style={styles.itemTotal}>₹{(item.menuItem.price * item.quantity).toFixed(0)}</Text>
         </View>
+        {/* Special instructions toggle */}
+        <Pressable
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+            setShowNote((v) => !v);
+          }}
+          style={styles.noteToggle}
+        >
+          <Ionicons name="chatbubble-ellipses-outline" size={12} color={Colors.primary} />
+          <Text style={styles.noteToggleText}>
+            {item.specialInstructions ? 'Edit note' : 'Add cooking note'}
+          </Text>
+        </Pressable>
+        {showNote && (
+          <TextInput
+            style={styles.noteInput}
+            value={noteText}
+            onChangeText={(text) => {
+              setNoteText(text);
+              updateInstructions(item.menuItem.id, text);
+            }}
+            placeholder="e.g. No spicy, less oil…"
+            placeholderTextColor={Colors.textLight}
+            multiline
+            maxLength={120}
+          />
+        )}
+        {!!item.specialInstructions && !showNote && (
+          <Text style={styles.notePreview} numberOfLines={1}>📝 {item.specialInstructions}</Text>
+        )}
       </View>
       <Pressable
         onPress={() => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
           removeItem(item.menuItem.id);
         }}
         style={styles.removeBtn}
@@ -61,133 +99,199 @@ function CartItemCard({ item }: { item: CartItem }) {
   );
 }
 
+export function ErrorBoundary({ retry }: { error: Error; retry: () => void }) {
+  return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, backgroundColor: '#FAFAFA' }}>
+      <Ionicons name="alert-circle-outline" size={52} color="#DDD" />
+      <Text style={{ fontFamily: 'Poppins_600SemiBold', fontSize: 17, color: '#333', marginTop: 16, textAlign: 'center' }}>Couldn't load cart</Text>
+      <Text style={{ fontFamily: 'Poppins_400Regular', fontSize: 13, color: '#999', marginTop: 6, textAlign: 'center' }}>Tap Retry to reload</Text>
+      <Pressable onPress={retry} style={{ marginTop: 24, backgroundColor: '#FF6B35', paddingHorizontal: 32, paddingVertical: 13, borderRadius: 12 }}>
+        <Text style={{ fontFamily: 'Poppins_600SemiBold', fontSize: 15, color: '#fff' }}>Retry</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 export default function CartScreen() {
   const insets = useSafeAreaInsets();
-  const {
-    items, restaurantName, subtotal, deliveryFee, discount, tax, total,
-    appliedCoupon, applyCoupon, removeCoupon, clearCart, itemCount,
-  } = useCart();
+  const { items, restaurantName, restaurantApiId, couponCode, setCouponCode, clearCart, itemCount, subtotal } = useCart();
+  const { quote, isLoading: quoteLoading } = useQuote();
+  const { show: showToast, toastProps } = useToast();
+  const couponJustApplied = useRef(false);
+
+  // Detect coupon rejection: server returned coupon_code: null after user applied a code
+  useEffect(() => {
+    if (!couponJustApplied.current || quoteLoading || !quote) return;
+    couponJustApplied.current = false;
+    if (couponCode && quote.bill.coupon_code === null) {
+      showToast('Coupon could not be applied. Please check the code and try again.', 'error');
+    }
+  }, [quote, quoteLoading]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android' || !restaurantApiId) return;
+    const handler = BackHandler.addEventListener('hardwareBackPress', () => {
+      router.push({ pathname: '/restaurant/[id]', params: { id: restaurantApiId } });
+      return true;
+    });
+    return () => handler.remove();
+  }, [restaurantApiId]);
+
   const [couponInput, setCouponInput] = useState('');
-  const webTopInset = Platform.OS === 'web' ? 67 : 0;
+  const [couponPending, setCouponPending] = useState(false);
+
+  const displayTotal = quote?.bill.overall_total ?? subtotal;
 
   const handleApplyCoupon = () => {
     const code = couponInput.trim().toUpperCase();
-    if (['FIRST30', 'RUSH20', 'FREEDEL'].includes(code)) {
-      applyCoupon(code);
-      setCouponInput('');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } else {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert('Invalid Coupon', 'Please enter a valid coupon code.');
-    }
+    if (!code) return;
+    setCouponPending(true);
+    setCouponCode(code);
+    setCouponInput('');
+    couponJustApplied.current = true;
+    setTimeout(() => setCouponPending(false), 400);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+  };
+
+  const handleRemoveCoupon = () => {
+    setCouponCode(null);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
   };
 
   if (items.length === 0) {
     return (
-      <View style={[styles.container, styles.emptyContainer, { paddingTop: insets.top + webTopInset }]}>
-        <Ionicons name="cart-outline" size={64} color={Colors.textLight} />
-        <Text style={styles.emptyTitle}>Your cart is empty</Text>
-        <Text style={styles.emptySubtext}>Add items from a restaurant to get started</Text>
-        <Pressable style={styles.browseButton} onPress={() => router.push('/(tabs)')}>
-          <Text style={styles.browseButtonText}>Browse Restaurants</Text>
-        </Pressable>
+      <View style={styles.container}>
+        <AppHeader title="Cart" />
+        <ScrollView contentContainerStyle={styles.emptyContainer} showsVerticalScrollIndicator={false}>
+          <Ionicons name="cart-outline" size={64} color={Colors.textLight} />
+          <Text style={styles.emptyTitle}>Your cart is empty</Text>
+          <Text style={styles.emptySubtext}>Add items from a restaurant to get started</Text>
+          <Pressable style={styles.browseButton} onPress={() => router.push('/(tabs)')}>
+            <Text style={styles.browseButtonText}>Browse Restaurants</Text>
+          </Pressable>
+        </ScrollView>
       </View>
     );
   }
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top + webTopInset }]}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Cart</Text>
-        <Pressable onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); clearCart(); }}>
-          <Text style={styles.clearText}>Clear</Text>
-        </Pressable>
-      </View>
-
-      <View style={styles.restaurantBanner}>
-        <Ionicons name="restaurant-outline" size={16} color={Colors.primary} />
-        <Text style={styles.restaurantBannerText}>{restaurantName}</Text>
-      </View>
-
-      <FlatList
-        data={items}
-        renderItem={({ item }) => <CartItemCard item={item} />}
-        keyExtractor={(item) => item.menuItem.id}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-        scrollEnabled={!!items.length}
-        ListFooterComponent={
-          <View>
-            <View style={styles.couponSection}>
-              {appliedCoupon ? (
-                <View style={styles.appliedCoupon}>
-                  <Ionicons name="pricetag" size={16} color={Colors.success} />
-                  <Text style={styles.appliedCouponText}>{appliedCoupon} applied</Text>
-                  <Pressable onPress={() => { removeCoupon(); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}>
-                    <Ionicons name="close-circle" size={18} color={Colors.textLight} />
-                  </Pressable>
-                </View>
-              ) : (
-                <View style={styles.couponInputRow}>
-                  <TextInput
-                    style={styles.couponInput}
-                    placeholder="Enter coupon code"
-                    placeholderTextColor={Colors.textLight}
-                    value={couponInput}
-                    onChangeText={setCouponInput}
-                    autoCapitalize="characters"
-                  />
-                  <Pressable
-                    style={[styles.applyButton, !couponInput.trim() && { opacity: 0.5 }]}
-                    onPress={handleApplyCoupon}
-                    disabled={!couponInput.trim()}
-                  >
-                    <Text style={styles.applyButtonText}>Apply</Text>
-                  </Pressable>
-                </View>
-              )}
-            </View>
-
-            <View style={styles.billSection}>
-              <Text style={styles.billTitle}>Bill Details</Text>
-              <View style={styles.billRow}>
-                <Text style={styles.billLabel}>Subtotal</Text>
-                <Text style={styles.billValue}>${subtotal.toFixed(2)}</Text>
-              </View>
-              <View style={styles.billRow}>
-                <Text style={styles.billLabel}>Delivery Fee</Text>
-                <Text style={[styles.billValue, deliveryFee === 0 && { color: Colors.success }]}>
-                  {deliveryFee === 0 ? 'FREE' : `$${deliveryFee.toFixed(2)}`}
-                </Text>
-              </View>
-              {discount > 0 && (
-                <View style={styles.billRow}>
-                  <Text style={styles.billLabel}>Discount</Text>
-                  <Text style={[styles.billValue, { color: Colors.success }]}>-${discount.toFixed(2)}</Text>
-                </View>
-              )}
-              <View style={styles.billRow}>
-                <Text style={styles.billLabel}>Taxes</Text>
-                <Text style={styles.billValue}>${tax.toFixed(2)}</Text>
-              </View>
-              <View style={[styles.billRow, styles.totalRow]}>
-                <Text style={styles.totalLabel}>Total</Text>
-                <Text style={styles.totalValue}>${total.toFixed(2)}</Text>
-              </View>
-            </View>
-          </View>
+    <View style={styles.container}>
+      <Toast {...toastProps} />
+      <AppHeader
+        title="Cart"
+        right={
+          <Pressable onPress={() => {
+            Alert.alert(
+              'Clear Cart',
+              'Are you sure you want to remove all items?',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Clear',
+                  style: 'destructive',
+                  onPress: () => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+                    clearCart();
+                  },
+                },
+              ],
+            );
+          }}>
+            <Text style={styles.clearText}>Clear</Text>
+          </Pressable>
         }
       />
 
-      <View style={[styles.checkoutBar, { paddingBottom: Platform.OS === 'web' ? 34 + 84 : Math.max(insets.bottom, 16) + 70 }]}>
+      <Pressable
+        style={({ pressed }) => [styles.restaurantBanner, pressed && { opacity: 0.75 }]}
+        onPress={() => {
+          if (restaurantApiId) {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+            router.push({ pathname: '/restaurant/[id]', params: { id: restaurantApiId } });
+          }
+        }}
+        disabled={!restaurantApiId}
+      >
+        <Ionicons name="restaurant-outline" size={16} color={Colors.primary} />
+        <Text style={styles.restaurantBannerText}>{restaurantName}</Text>
+        <View style={{ flex: 1 }} />
+        {restaurantApiId ? (
+          <>
+            <Text style={styles.addMoreText}>Add more</Text>
+            <Ionicons name="chevron-forward" size={14} color={Colors.primary} />
+          </>
+        ) : null}
+      </Pressable>
+
+      <KeyboardAwareScrollViewCompat
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        {items.map((item) => <CartItemCard key={item.menuItem.id} item={item} />)}
+
+        <View style={styles.couponSection}>
+          {couponCode ? (
+            <View style={styles.appliedCoupon}>
+              <Ionicons name="pricetag" size={16} color={Colors.success} />
+              <Text style={styles.appliedCouponText}>{couponCode} applied</Text>
+              <Pressable onPress={handleRemoveCoupon}>
+                <Ionicons name="close-circle" size={18} color={Colors.textLight} />
+              </Pressable>
+            </View>
+          ) : (
+            <View style={styles.couponInputRow}>
+              <TextInput
+                style={styles.couponInput}
+                placeholder="Enter coupon code"
+                placeholderTextColor={Colors.textLight}
+                value={couponInput}
+                onChangeText={setCouponInput}
+                autoCapitalize="characters"
+              />
+              <Pressable
+                style={[styles.applyButton, (!couponInput.trim() || couponPending) && { opacity: 0.5 }]}
+                onPress={handleApplyCoupon}
+                disabled={!couponInput.trim() || couponPending}
+              >
+                {couponPending
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Text style={styles.applyButtonText}>Apply</Text>
+                }
+              </Pressable>
+            </View>
+          )}
+        </View>
+
+        <View style={styles.billSection}>
+          <View style={styles.billTitleRow}>
+            <Text style={styles.billTitle}>Bill Details</Text>
+            {quoteLoading && (
+              <ActivityIndicator size="small" color={Colors.primary} />
+            )}
+          </View>
+          {quote?.bill ? (
+            <BillBreakdown quoteBill={quote.bill} />
+          ) : !quoteLoading ? (
+            // Fallback while quote loads for the first time
+            <View style={styles.billRow}>
+              <Text style={styles.billLabel}>Item Total</Text>
+              <Text style={styles.billValue}>₹{subtotal.toFixed(0)}</Text>
+            </View>
+          ) : null}
+        </View>
+      </KeyboardAwareScrollViewCompat>
+
+      <View style={[styles.checkoutBar, { paddingBottom: Platform.OS === 'web' ? 20 : Math.max(insets.bottom, 16) }]}>
         <View style={styles.checkoutInfo}>
-          <Text style={styles.checkoutTotal}>${total.toFixed(2)}</Text>
+          <Text style={styles.checkoutTotal}>₹{displayTotal % 1 === 0 ? displayTotal : displayTotal.toFixed(2)}</Text>
           <Text style={styles.checkoutItems}>{itemCount} item{itemCount > 1 ? 's' : ''}</Text>
         </View>
         <Pressable
           style={({ pressed }) => [styles.checkoutButton, pressed && { opacity: 0.9 }]}
           onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
             router.push('/checkout');
           }}
         >
@@ -205,6 +309,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
   },
   emptyContainer: {
+    flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
@@ -232,19 +337,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#fff',
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 8,
-  },
-  headerTitle: {
-    fontFamily: 'Poppins_700Bold',
-    fontSize: 24,
-    color: Colors.text,
-  },
   clearText: {
     fontFamily: 'Poppins_500Medium',
     fontSize: 14,
@@ -266,9 +358,14 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.primary,
   },
+  addMoreText: {
+    fontFamily: 'Poppins_500Medium',
+    fontSize: 12,
+    color: Colors.primary,
+  },
   listContent: {
     paddingHorizontal: 20,
-    paddingBottom: 16,
+    paddingBottom: 24,
   },
   cartItem: {
     flexDirection: 'row',
@@ -360,6 +457,35 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  noteToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 6,
+  },
+  noteToggleText: {
+    fontFamily: 'Poppins_400Regular',
+    fontSize: 11,
+    color: Colors.primary,
+  },
+  noteInput: {
+    marginTop: 6,
+    backgroundColor: Colors.surfaceAlt,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    fontFamily: 'Poppins_400Regular',
+    fontSize: 12,
+    color: Colors.text,
+    minHeight: 48,
+    textAlignVertical: 'top',
+  },
+  notePreview: {
+    fontFamily: 'Poppins_400Regular',
+    fontSize: 11,
+    color: Colors.textSecondary,
+    marginTop: 4,
+  },
   couponSection: {
     marginTop: 8,
     marginBottom: 16,
@@ -410,11 +536,16 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 10,
   },
+  billTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
   billTitle: {
     fontFamily: 'Poppins_600SemiBold',
     fontSize: 15,
     color: Colors.text,
-    marginBottom: 4,
   },
   billRow: {
     flexDirection: 'row',
@@ -430,27 +561,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.text,
   },
-  totalRow: {
-    borderTopWidth: 1,
-    borderTopColor: Colors.borderLight,
-    paddingTop: 10,
-    marginTop: 4,
-  },
-  totalLabel: {
-    fontFamily: 'Poppins_600SemiBold',
-    fontSize: 15,
-    color: Colors.text,
-  },
-  totalValue: {
-    fontFamily: 'Poppins_700Bold',
-    fontSize: 16,
-    color: Colors.text,
-  },
   checkoutBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
     backgroundColor: Colors.surface,
     flexDirection: 'row',
     alignItems: 'center',
