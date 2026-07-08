@@ -75,6 +75,7 @@ export default function CheckoutScreen() {
   const [placing, setPlacing] = useState(false);
   // notes is persisted in CartContext (orderNotes) so it survives navigating away to add items
   const [orderSuccess, setOrderSuccess] = useState(false);
+  const [paymentRef, setPaymentRef] = useState<string | undefined>();
 
   // Delivery coordinates for server-side quote (accurate delivery fee)
   const [deliveryLat, setDeliveryLat] = useState<number | null>(null);
@@ -100,6 +101,7 @@ export default function CheckoutScreen() {
 
   // Auto-select default address and set delivery coordinates.
   // Skip addresses the server marks as not serviceable.
+  // Prefer a recently added address (within last 10 min) over the default.
   useEffect(() => {
     if (savedAddresses && savedAddresses.length > 0 && selectedAddressId === null) {
       const serviceable = savedAddresses.filter((a) => {
@@ -108,7 +110,11 @@ export default function CheckoutScreen() {
         }
         return a.isServiceable !== false;
       });
-      const def = serviceable.find((a) => a.isDefault) ?? serviceable[0];
+      const tenMinAgo = Date.now() - 10 * 60 * 1000;
+      const recentlyAdded = serviceable.find(
+        (a) => a.createdAt && new Date(a.createdAt).getTime() > tenMinAgo,
+      );
+      const def = recentlyAdded ?? serviceable.find((a) => a.isDefault) ?? serviceable[0];
       if (!def) { setShowNewAddress(true); return; }
       setSelectedAddressId(def.id);
       setShowNewAddress(false);
@@ -253,6 +259,7 @@ export default function CheckoutScreen() {
           notes: { restaurant: restaurantName || '' },
         });
         razorpayPaymentId = payment.razorpay_payment_id;
+        setPaymentRef(payment.razorpay_payment_id);
       } catch (err: any) {
         // code 0 = user cancelled
         if (err?.code === 0) {
@@ -285,6 +292,8 @@ export default function CheckoutScreen() {
         // ("Street, City, Pincode") doesn't match, but the structured format ("Street, City - Pincode") does.
         if (saved) {
           finalAddress = `${saved.address}${saved.landmark ? ', ' + saved.landmark : ''}, ${saved.city}${saved.pincode ? ' - ' + saved.pincode : ''}`;
+          setSelectedAddressId(saved.id);
+          setShowNewAddress(false);
         }
       } catch {
         // Pre-save failed (network error, etc.) — proceed and let the order attempt fail gracefully
@@ -483,6 +492,16 @@ export default function CheckoutScreen() {
                           ]}>
                             {addr.label}{addr.isDefault ? '  ✓ Default' : ''}
                           </Text>
+                          {isSelected && (
+                            <View style={styles.selectedBadge}>
+                              <Text style={styles.selectedBadgeText}>Selected</Text>
+                            </View>
+                          )}
+                          {addr.createdAt && Date.now() - new Date(addr.createdAt).getTime() < 24 * 60 * 60 * 1000 && !addr.isDefault && (
+                            <View style={styles.newBadge}>
+                              <Text style={styles.newBadgeText}>New</Text>
+                            </View>
+                          )}
                           {isOutOfArea && (
                             <View style={styles.notDeliverableBadge}>
                               <Text style={styles.notDeliverableText}>Not deliverable</Text>
@@ -544,14 +563,14 @@ export default function CheckoutScreen() {
                 )}
                 <View style={styles.inputField}>
                   <Text style={styles.inputLabel}>
-                    Address{Platform.OS !== 'web' && !newPickedLoc ? ' *' : ''}
+                    Address *
                   </Text>
                   <TextInput
-                    style={[styles.input, Platform.OS !== 'web' && !!newPickedLoc && { color: Colors.textSecondary, backgroundColor: Colors.surfaceAlt }]}
+                    style={styles.input}
                     value={address}
-                    onChangeText={Platform.OS === 'web' || !newPickedLoc ? setAddress : undefined}
-                    editable={Platform.OS === 'web' || !newPickedLoc}
-                    placeholder={Platform.OS !== 'web' ? 'Use "Pick Location on Map" above' : 'House no, Street, Area, City...'}
+                    onChangeText={setAddress}
+                    editable={true}
+                    placeholder="House no, Street, Area, City..."
                     placeholderTextColor={Colors.textLight}
                     multiline
                   />
@@ -750,6 +769,12 @@ export default function CheckoutScreen() {
               <Ionicons name="checkmark" size={40} color="#fff" />
             </View>
             <Text style={styles.successTitle}>Order Placed!</Text>
+            {paymentRef ? (
+              <View style={styles.paymentRefBox}>
+                <Text style={styles.paymentRefLabel}>Payment Reference</Text>
+                <Text style={styles.paymentRefValue}>{paymentRef}</Text>
+              </View>
+            ) : null}
             <Text style={styles.successSub}>Redirecting to order tracking…</Text>
           </Animated.View>
         </View>
@@ -843,8 +868,8 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   addressCardActive: {
-    borderColor: Colors.primary + '50',
-    backgroundColor: Colors.primary + '06',
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primary + '10',
   },
   addressCardDisabled: {
     opacity: 0.55,
@@ -860,6 +885,28 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins_500Medium',
     fontSize: 10,
     color: Colors.error,
+  },
+  newBadge: {
+    backgroundColor: Colors.primary + '20',
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  newBadgeText: {
+    fontFamily: 'Poppins_600SemiBold',
+    fontSize: 10,
+    color: Colors.primary,
+  },
+  selectedBadge: {
+    backgroundColor: Colors.primary,
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  selectedBadgeText: {
+    fontFamily: 'Poppins_600SemiBold',
+    fontSize: 10,
+    color: '#fff',
   },
   addressCardLeft: {
     flex: 1,
@@ -1170,6 +1217,26 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins_700Bold',
     fontSize: 22,
     color: Colors.text,
+  },
+  paymentRefBox: {
+    backgroundColor: Colors.surfaceAlt,
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    alignItems: 'center',
+    width: '100%',
+  },
+  paymentRefLabel: {
+    fontFamily: 'Poppins_400Regular',
+    fontSize: 11,
+    color: Colors.textSecondary,
+    marginBottom: 2,
+  },
+  paymentRefValue: {
+    fontFamily: 'Poppins_600SemiBold',
+    fontSize: 13,
+    color: Colors.text,
+    letterSpacing: 0.5,
   },
   successSub: {
     fontFamily: 'Poppins_400Regular',
